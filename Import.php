@@ -60,10 +60,11 @@ class Import extends CLI
         $path = $file->getRealPath();
 
         $title = $this->titleExif($path, $file_title);
-        $input = false;
+
 
         $answer = false;
         while ($answer == false) {
+            $input = false;
             print 'Filename:' . $file_title . "\n----------------------\n";
             //return [];
             $json = $this->getBooks($title);
@@ -77,7 +78,6 @@ class Import extends CLI
                     print $i.') '.$similar.' '.$print_text."\n";
                     if($similar > 33){
                         $input = 0;
-                        $answer = true;
                     }
                 }
             }
@@ -91,22 +91,25 @@ class Import extends CLI
                 $input = $this->getInput("Select an entry or enter a different title: ");
             }
 
-            if($input == 's'){
+
+            if($input === 's'){
                 file_put_contents('./skipped.txt', $path."\n", FILE_APPEND);
                 return [];
-            }else if($input == 'o'){
+            }else if($input === 'o'){
                 exec('open "'.$path.'"');
-            }else if($input == 'f'){
+            }else if($input === 'f'){
                 $title = $file_title;
             }else if (!is_numeric($input) && strlen($input) > 3) {
                 $title = $input;
                 continue;
             } else if (is_numeric($input)) {
                 $answer = true;
+                break;
             }
         }
 
         $item = $json->items[$input];
+
         foreach($item->volumeInfo->authors as $key => $author){
             $item->volumeInfo->authors[$key] = $this->migrate_authors($author);
         }
@@ -118,6 +121,12 @@ class Import extends CLI
         $data['publisher'] = @$item->volumeInfo->publisher;
         $data['pages'] = @$item->volumeInfo->pageCount;
 
+        foreach($data as $key => $val){
+            if(empty($val)){
+                $data[$key] = '';
+            }
+        }
+
         return $data;
     }
 
@@ -128,6 +137,21 @@ class Import extends CLI
         $items = [];
         foreach (new FilesystemIterator($this->path) as $file) {
             if(strtolower($file->getExtension()) != 'pdf') continue;
+
+            $hash = md5_file($file->getRealPath());
+            global $dbHandle;
+            database_connect(IL_DATABASE_PATH, 'library');
+            $query = "SELECT COUNT(*) FROM library WHERE filehash = :filehash";
+            $stmt = $dbHandle->prepare($query);
+            $stmt->bindParam(':filehash', $hash, PDO::PARAM_STR);
+
+            $stmt->execute();
+            $count = $stmt->fetchColumn();
+            if(intval($count) > 0){
+                continue;
+            }
+            $stmt = null;
+
             $data = $this->getBook($file);
             if(!empty($data)){
                 print_r($data);
@@ -239,35 +263,7 @@ class Import extends CLI
             $id = $dbHandle->lastInsertId();
             $new_file = str_pad($id, 5, "0", STR_PAD_LEFT) . '.pdf';
 
-            // Save citation key.
-            $stmt6 = $dbHandle->prepare("UPDATE library SET bibtex=:bibtex WHERE id=:id");
-
-            $stmt6->bindParam(':bibtex', $bibtex, PDO::PARAM_STR);
-            $stmt6->bindParam(':id', $id, PDO::PARAM_INT);
-
-            $bibtex_author = 'unknown';
-
-            if (!empty($last_name[0])) {
-                $bibtex_author = utf8_deaccent($last_name[0]);
-                $bibtex_author = str_replace(' ', '', $bibtex_author);
-            }
-
-            empty($year) ? $bibtex_year = '0000' : $bibtex_year = substr($year, 0, 4);
-
-            $bibtex = $bibtex_author . '-' . $bibtex_year . '-ID' . $id;
-
-            $insert = $stmt6->execute();
             $insert = null;
-
-            if (isset($_GET['shelf']) && !empty($userID)) {
-                $user_query = $dbHandle->quote($userID);
-                $file_query = $dbHandle->quote($id);
-                $dbHandle->exec("INSERT OR IGNORE INTO shelves (userID,fileID) VALUES ($user_query,$file_query)");
-            }
-
-            if (isset($_GET['project']) && !empty($_GET['projectID'])) {
-                $dbHandle->exec("INSERT OR IGNORE INTO projectsfiles (projectID,fileID) VALUES (" . intval($_GET['projectID']) . "," . intval($id) . ")");
-            }
 
             // record new category into categories, if not exists #########
 
