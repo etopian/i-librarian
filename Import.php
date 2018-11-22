@@ -60,7 +60,7 @@ class Import extends CLI
         $path = $file->getRealPath();
 
         $title = $this->titleExif($path, $file_title);
-
+        $input = false;
 
         $answer = false;
         while ($answer == false) {
@@ -81,14 +81,16 @@ class Import extends CLI
                     }
                 }
             }
-            if ($answer) continue;
+
 
             print "o) Open item\n";
             print "f) Use filename\n";
             print "s) Skip importing\n";
             print "m) Manually define\n";
+            if($input === false){
+                $input = $this->getInput("Select an entry or enter a different title: ");
+            }
 
-            $input = $this->getInput("Select an entry or enter a different title: ");
             if($input == 's'){
                 file_put_contents('./skipped.txt', $path."\n", FILE_APPEND);
                 return [];
